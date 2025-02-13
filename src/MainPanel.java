@@ -8,6 +8,7 @@ public class MainPanel extends JPanel {
     private User currentUser;
     private boolean mediumUnlocked = false;
     private boolean hardUnlocked = false;
+    private GamePanel gamePanel;
 
     public MainPanel() {
         cardLayout = new CardLayout();
@@ -19,7 +20,7 @@ public class MainPanel extends JPanel {
         LoginPanel loginPanel = new LoginPanel(this, userManager);
         RegisterPanel registerPanel = new RegisterPanel(this, userManager);
         DifficultyPanel difficultyPanel = new DifficultyPanel(this);
-        GamePanel gamePanel = new GamePanel(this);
+        gamePanel = new GamePanel(this);
 
         cardPanel.add(startPanel, "START");
         cardPanel.add(loginPanel, "LOGIN");
@@ -31,6 +32,13 @@ public class MainPanel extends JPanel {
         add(cardPanel, BorderLayout.CENTER);
 
         cardLayout.show(cardPanel, "START");
+
+        // Ensure user progress is saved when the application exits
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (currentUser != null) {
+                userManager.updateUserProgress(currentUser);
+            }
+        }));
     }
 
     @Override
@@ -59,7 +67,7 @@ public class MainPanel extends JPanel {
     }
 
     public void showGamePanel(String difficulty) {
-        ((GamePanel) cardPanel.getComponent(4)).startGame(difficulty);
+        gamePanel.startGame(difficulty);
         cardLayout.show(cardPanel, "GAME");
     }
 
@@ -73,6 +81,8 @@ public class MainPanel extends JPanel {
 
     public void setCurrentUser(User user) {
         this.currentUser = user;
+        this.mediumUnlocked = user.isMediumUnlocked();
+        this.hardUnlocked = user.isHardUnlocked();
     }
 
     public User getCurrentUser() {
@@ -81,10 +91,14 @@ public class MainPanel extends JPanel {
 
     public void unlockMedium() {
         mediumUnlocked = true;
+        currentUser.setMediumUnlocked(true);
+        userManager.updateUserProgress(currentUser);
     }
 
     public void unlockHard() {
         hardUnlocked = true;
+        currentUser.setHardUnlocked(true);
+        userManager.updateUserProgress(currentUser);
     }
 
     public boolean isMediumUnlocked() {

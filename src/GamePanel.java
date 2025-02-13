@@ -1,8 +1,15 @@
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+
 
 public class GamePanel extends JPanel {
     private JLabel flagLabel;
@@ -19,17 +26,35 @@ public class GamePanel extends JPanel {
     private MainPanel mainPanel;
     private Timer timer;
     private int timeRemaining;
+    private List<Flag> incorrectFlags; // List to store incorrect flags
+    private SoundEffect buttonSound;
 
     public GamePanel(MainPanel mainPanel) {
         this.mainPanel = mainPanel;
+        this.buttonSound = new SoundEffect("src/click.wav");
+
         setLayout(new BorderLayout());
 
         flagDatabase = new FlagDatabase();
         score = 0;
         questionsAnswered = 0;
+        incorrectFlags = new ArrayList<>(); // Initialize the list
 
         // Main panel with gradient background
-        JPanel mainInnerPanel = new JPanel(new GridBagLayout());
+        JPanel mainInnerPanel = new JPanel(new GridBagLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2d = (Graphics2D) g;
+                int width = getWidth();
+                int height = getHeight();
+                Color color1 = Color.decode("#7AD2EA");
+                Color color2 = Color.decode("#0F597E");
+                GradientPaint gp = new GradientPaint(0, 0, color1, 0, height, color2);
+                g2d.setPaint(gp);
+                g2d.fillRect(0, 0, width, height);
+            }
+        };
         mainInnerPanel.setOpaque(false);
 
         // White panel with black outline
@@ -84,18 +109,36 @@ public class GamePanel extends JPanel {
         timerScorePanel.add(timerLabel, BorderLayout.WEST);
         timerScorePanel.add(scoreLabel, BorderLayout.EAST);
 
-
         innerPanel.add(timerScorePanel, BorderLayout.NORTH);
 
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
-        gbc.gridy = 0;
+        gbc.gridy = 1;
         gbc.anchor = GridBagConstraints.CENTER;
         mainInnerPanel.add(innerPanel, gbc);
 
         add(mainInnerPanel, BorderLayout.CENTER);
-    }
 
+        // Add the "Go Back" label at the top
+        JLabel goBackLabel = new JLabel("< Go Back");
+        goBackLabel.setFont(new Font("Arial", Font.BOLD, 18));
+        goBackLabel.setForeground(Color.white); // Set to the same blue color as the buttons
+        goBackLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        goBackLabel.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                buttonSound.play();
+                mainPanel.showDifficultyPanel();
+            }
+        });
+
+        // Position "Go Back" label
+        GridBagConstraints backGbc = new GridBagConstraints();
+        backGbc.gridx = 0;
+        backGbc.gridy = 0;
+        backGbc.anchor = GridBagConstraints.WEST;
+        backGbc.insets = new Insets(20, 10, 10, 0); // Add some padding
+        mainInnerPanel.add(goBackLabel, backGbc);
+    }
 
     private boolean analysisShown = false;
 
@@ -103,6 +146,7 @@ public class GamePanel extends JPanel {
         this.difficulty = difficulty;
         score = 0;
         questionsAnswered = 0;
+        incorrectFlags.clear(); // Clear incorrect flags list at the start of the game
         scoreLabel.setText("Score: 0/10");
         currentFlags = flagDatabase.getFlags(difficulty);
         loadNextFlag();
@@ -143,56 +187,101 @@ public class GamePanel extends JPanel {
         int correctIndex = (int) (Math.random() * 4);
         choiceButtons[correctIndex].setText(currentFlag.getName());
 
+        // Create a list of incorrect flag names
+        List<Flag> incorrectFlags = new ArrayList<>(currentFlags);
+        incorrectFlags.remove(currentFlag);
+
+        // Ensure the incorrect flags are unique and not already guessed
+        Collections.shuffle(incorrectFlags);
+        int incorrectFlagIndex = 0;
         for (int i = 0; i < 4; i++) {
             if (i != correctIndex) {
-                int randomIndex;
-                do {
-                    randomIndex = (int) (Math.random() * currentFlags.size());
-                } while (currentFlags.get(randomIndex).equals(currentFlag));
-                choiceButtons[i].setText(currentFlags.get(randomIndex).getName());
+                choiceButtons[i].setText(incorrectFlags.get(incorrectFlagIndex).getName());
+                incorrectFlagIndex++;
             }
         }
     }
 
     private void checkAnswer(String selectedAnswer) {
-        if (selectedAnswer.equals(currentFlag.getName())) {
+        if (!selectedAnswer.equals(currentFlag.getName())) {
+            incorrectFlags.add(currentFlag); // Add incorrect flag to the list
+            highlightCorrectAnswer();
+        } else {
             score++;
         }
         questionsAnswered++;
-        scoreLabel.setText("Score: " + score+"/10");
+        scoreLabel.setText("Score: " + score + "/10");
         loadNextFlag();
     }
 
+    private void highlightCorrectAnswer() {
+        for (JButton button : choiceButtons) {
+            if (button.getText().equals(currentFlag.getName())) {
+                button.setBackground(Color.GREEN); // Highlight correct answer
+            }
+        }
+    }
+
     private void showAnalysis() {
-        String analysis = PerformanceAnalyzer.getDetailedFeedback(score);
+        String analysis = PerformanceAnalyzer.getDetailedFeedback(score, incorrectFlags);
         if (difficulty.equals("Easy") && score >= 7) {
             mainPanel.unlockMedium();
-        }
-        else if (difficulty.equals("Medium") && score >= 8) {
+        } else if (difficulty.equals("Medium") && score >= 8) {
             mainPanel.unlockHard();
         }
 
         SwingUtilities.invokeLater(() -> {
-            JDialog analysisDialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), "Performance Analysis", true);
-            analysisDialog.setSize(400, 300);
-            analysisDialog.setLayout(new BorderLayout());
+            JFrame analysisFrame = new JFrame("Performance Analysis");
+            analysisFrame.setSize(500, 400);
+            analysisFrame.setLayout(new BorderLayout());
 
-            JTextArea analysisTextArea = new JTextArea(analysis);
-            analysisTextArea.setWrapStyleWord(true);
-            analysisTextArea.setLineWrap(true);
-            analysisTextArea.setEditable(false);
+            JPanel contentPanel = new JPanel(new BorderLayout()) {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    super.paintComponent(g);
+                    Graphics2D g2d = (Graphics2D) g;
+                    int width = getWidth();
+                    int height = getHeight();
+                    Color color1 = Color.decode("#7AD2EA");
+                    Color color2 = Color.decode("#0F597E");
+                    GradientPaint gp = new GradientPaint(0, 0, color1, 0, height, color2);
+                    g2d.setPaint(gp);
+                    g2d.fillRect(0, 0, width, height);
+                }
+            };
+            contentPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+            contentPanel.setOpaque(false); // Ensure the gradient is visible
 
-            JScrollPane scrollPane = new JScrollPane(analysisTextArea);
-            analysisDialog.add(scrollPane, BorderLayout.CENTER);
+            JPanel textPanel = new JPanel(new BorderLayout());
+            textPanel.setBackground(Color.WHITE);
+            textPanel.setBorder(BorderFactory.createLineBorder(Color.BLACK, 2));
+            JTextArea analysisArea = new JTextArea(analysis);
+            analysisArea.setFont(new Font("Arial", Font.PLAIN, 16)); // Example: set font size to 16
+            analysisArea.setLineWrap(true);
+            analysisArea.setWrapStyleWord(true);
+            analysisArea.setEditable(false);
+            JScrollPane scrollPane = new JScrollPane(analysisArea);
+            textPanel.add(scrollPane, BorderLayout.CENTER);
+
+            contentPanel.add(textPanel, BorderLayout.CENTER);
 
             JButton closeButton = new JButton("Close");
+            closeButton.setFont(new Font("Arial", Font.BOLD, 18));
+            closeButton.setBackground(Color.decode("#2592AF"));
+            closeButton.setForeground(Color.WHITE);
+            closeButton.setBorder(BorderFactory.createLineBorder(Color.BLACK, 2));
+            closeButton.setFocusPainted(false);
+            closeButton.setContentAreaFilled(false);
+            closeButton.setOpaque(true);
             closeButton.addActionListener(e -> {
-                analysisDialog.dispose();
-                mainPanel.showDifficultyPanel();
+                analysisFrame.dispose();
+                mainPanel.showDifficultyPanel(); // Navigate back to DifficultyPanel
             });
-            analysisDialog.add(closeButton, BorderLayout.SOUTH);
+            contentPanel.add(closeButton, BorderLayout.SOUTH);
 
-            analysisDialog.setVisible(true);
+            analysisFrame.add(contentPanel);
+            analysisFrame.setLocationRelativeTo(this);
+            analysisFrame.setVisible(true);
         });
     }
 
@@ -202,99 +291,36 @@ public class GamePanel extends JPanel {
         }
         timeRemaining = 10;
         timerLabel.setText("Time: " + timeRemaining);
-
-        // Create a new thread for the timer
-        Thread timerThread = new Thread(new Runnable() {
+        timer = new Timer(1000, new ActionListener() {
             @Override
-            public void run() {
-                timer = new Timer(1000, new ActionListener() {
-                    @Override
-                    public void actionPerformed(ActionEvent e) {
-                        if (timeRemaining > 0) {
-                            timeRemaining--;
-                            SwingUtilities.invokeLater(new Runnable() {
-                                @Override
-                                public void run() {
-                                    timerLabel.setText("Time: " + timeRemaining);
-                                }
-                            });
-                        } else {
-                            timer.stop();
-                            questionsAnswered++;
-                            loadNextFlag();
-                        }
-                    }
-                });
-                timer.start();
+            public void actionPerformed(ActionEvent e) {
+                timeRemaining--;
+                if (timeRemaining >= 0) {
+                    timerLabel.setText("Time: " + timeRemaining);
+                }
+                if (timeRemaining == 0) {
+                    timer.stop();
+                    incorrectFlags.add(currentFlag); // Add current flag to incorrect list
+                    highlightCorrectAnswer();
+                    questionsAnswered++;
+                    scoreLabel.setText("Score: " + score + "/10");
+                    loadNextFlag();
+                }
             }
         });
-
-        // Start the timer thread
-        timerThread.start();
+        timer.start();
     }
-
 
     private class ChoiceButtonListener implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
-            JButton sourceButton = (JButton) e.getSource();
-            String selectedAnswer = sourceButton.getText();
-            CheckAnswerTask checkAnswerTask = new CheckAnswerTask(selectedAnswer, sourceButton);
-            checkAnswerTask.execute();
-        }
-    }
-
-    private class CheckAnswerTask extends SwingWorker<Void, Void> {
-        private String selectedAnswer;
-        private JButton sourceButton;
-
-        public CheckAnswerTask(String selectedAnswer, JButton sourceButton) {
-            this.selectedAnswer = selectedAnswer;
-            this.sourceButton = sourceButton;
-        }
-
-        @Override
-        protected Void doInBackground() throws Exception {
-            if (selectedAnswer.equals(currentFlag.getName())) {
-                sourceButton.setBackground(Color.GREEN); // Change button color to green for correct answer
-            } else {
-                sourceButton.setBackground(Color.RED); // Change button color to red for incorrect answer
-                Timer colorTimer = new Timer(1000, new ActionListener() {
-                    @Override
-                    public void actionPerformed(ActionEvent e) {
-                        sourceButton.setBackground(Color.decode("#2592AF")); // Reset button color after 1 second
-                    }
-                });
-                colorTimer.setRepeats(false);
-                colorTimer.start();
+            buttonSound.play();
+            if (running) {
+                JButton clickedButton = (JButton) e.getSource();
+                String selectedAnswer = clickedButton.getText();
+                clickedButton.setBackground(selectedAnswer.equals(currentFlag.getName()) ? Color.GREEN : Color.RED);
+                checkAnswer(selectedAnswer);
             }
-            checkAnswer(selectedAnswer); // Proceed to check the answer
-
-            // Enable choice buttons after checking answer
-            enableChoiceButtons();
-
-            return null;
         }
-    }
-
-    private void enableChoiceButtons() {
-        for (JButton button : choiceButtons) {
-            button.setEnabled(true);
-        }
-    }
-
-
-
-    @Override
-    protected void paintComponent(Graphics g) {
-        super.paintComponent(g);
-        Graphics2D g2d = (Graphics2D) g;
-        int width = getWidth();
-        int height = getHeight();
-        Color color1 = Color.decode("#7AD2EA");
-        Color color2 = Color.decode("#0F597E");
-        GradientPaint gp = new GradientPaint(0, 0, color1, 0, height, color2);
-        g2d.setPaint(gp);
-        g2d.fillRect(0, 0, width, height);
     }
 }

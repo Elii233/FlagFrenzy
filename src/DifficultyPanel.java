@@ -5,6 +5,7 @@ import java.awt.event.ActionListener;
 
 public class DifficultyPanel extends JPanel {
     private MainPanel mainPanel;
+    private SoundEffect buttonSound;
 
     public DifficultyPanel(MainPanel mainPanel) {
         this.mainPanel = mainPanel;
@@ -13,18 +14,24 @@ public class DifficultyPanel extends JPanel {
 
         JPanel innerPanel = new JPanel();
         innerPanel.setPreferredSize(new Dimension(650, 450));
-        innerPanel.setLayout(new GridLayout(4, 1));
+        innerPanel.setLayout(new GridLayout(4, 1)); // Adjusted to 4 rows
         innerPanel.setBackground(Color.WHITE); // Set background to white
         innerPanel.setBorder(BorderFactory.createLineBorder(Color.BLACK, 2)); // Add black outline
 
-        JLabel label = new JLabel("Select Difficulty", SwingConstants.CENTER);
+        JLabel label = new JLabel("Select a difficulty", SwingConstants.CENTER);
         label.setFont(new Font("Arial", Font.BOLD, 40));
         innerPanel.add(label);
 
-        JPanel easyPanel = createButtonPanel("Easy", e -> mainPanel.showGamePanel("Easy"));
+        buttonSound = new SoundEffect("src/click.wav");
+
+        JPanel easyPanel = createButtonPanel("Easy", e -> {
+            buttonSound.play();
+            mainPanel.showGamePanel("Easy");
+        });
         innerPanel.add(easyPanel);
 
         JPanel mediumPanel = createButtonPanel("Medium", e -> {
+            buttonSound.play();
             if (mainPanel.isMediumUnlocked()) {
                 mainPanel.showGamePanel("Medium");
             } else {
@@ -34,6 +41,7 @@ public class DifficultyPanel extends JPanel {
         innerPanel.add(mediumPanel);
 
         JPanel hardPanel = createButtonPanel("Hard", e -> {
+            buttonSound.play();
             if (mainPanel.isHardUnlocked()) {
                 mainPanel.showGamePanel("Hard");
             } else {
@@ -42,10 +50,29 @@ public class DifficultyPanel extends JPanel {
         });
         innerPanel.add(hardPanel);
 
+        // Add the "Go Back" label at the top
+        JLabel goBackLabel = new JLabel("< Sign Out");
+        goBackLabel.setFont(new Font("Arial", Font.BOLD, 18));
+        goBackLabel.setForeground(Color.white); // Set to the same blue color as the buttons
+        goBackLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        goBackLabel.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                buttonSound.play();
+                mainPanel.showLoginPanel();
+            }
+        });
+
+        GridBagConstraints backGbc = new GridBagConstraints();
+        backGbc.gridx = 0;
+        backGbc.gridy = 0;
+        backGbc.anchor = GridBagConstraints.NORTHWEST;
+        backGbc.insets = new Insets(10, 10, 10, 10); // Add some padding
+        add(goBackLabel, backGbc);
+
         // Add the innerPanel to the DifficultyPanel
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
-        gbc.gridy = 0;
+        gbc.gridy = 1;
         gbc.anchor = GridBagConstraints.CENTER;
         add(innerPanel, gbc);
     }
